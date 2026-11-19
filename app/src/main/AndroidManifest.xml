@@ -1,0 +1,70 @@
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".auth.AuthSetupActivity"
+            android:exported="false" />
+
+            <activity
+    android:name=".auth.UnlockActivity"
+    android:exported="false" />
+
+        <activity
+            android:name=".apps.AppSelectionActivity"
+            android:exported="false" />
+
+        <activity
+    android:name=".settings.AutoLockActivity"
+    android:exported="false" /> 
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <activity
+    android:name=".auth.PatternSetupActivity"
+    android:exported="false" />
+    
+    <activity
+    android:name=".auth.BiometricUnlockActivity"
+    android:exported="false" />
+
+    <activity
+    android:name=".settings.SettingsActivity"
+    android:exported="false" />
+    
+<service
+    android:name=".service.AppLockAccessibilityService"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+    android:exported="true">
+
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/app_locker_accessibility_config" />
+
+</service>
+    </application>
+</manifest>

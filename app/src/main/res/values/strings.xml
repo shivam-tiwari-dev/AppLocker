@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">App Locker</string>
+<string name="accessibility_service_description">Detects when selected protected apps are opened so App Locker can request authentication.</string>
+
+</resources>
