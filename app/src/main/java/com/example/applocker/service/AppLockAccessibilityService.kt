@@ -2,12 +2,13 @@
 package com.example.applocker.service
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Context
 import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
+import com.example.applocker.auth.UnlockActivity
 
 class AppLockAccessibilityService : AccessibilityService() {
 
@@ -15,31 +16,32 @@ class AppLockAccessibilityService : AccessibilityService() {
         getSharedPreferences("app_locker_settings", Context.MODE_PRIVATE)
     }
 
-    private lateinit var overlayManager: LockOverlayManager
     private lateinit var relockController: RelockController
 
     private var unlockedPackage: String? = null
     private var currentPackage: String? = null
+    private var pendingAuthPackage: String? = null
 
     private var screenReceiver: ScreenStateReceiver? = null
-    private var biometricReceiver: BroadcastReceiver? = null
+    private var authReceiver: BroadcastReceiver? = null
     private var quickLockReceiver: BroadcastReceiver? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
-        overlayManager = LockOverlayManager(this)
+
+        android.util.Log.d(
+            "AppLockerDebug",
+            "ACCESSIBILITY SERVICE CONNECTED"
+        )
 
         relockController = RelockController {
             unlockedPackage = null
         }
 
-        // Screen state receiver
         screenReceiver = ScreenStateReceiver(
             onScreenOff = {
                 unlockedPackage = null
                 relockController.cancel()
-                overlayManager.hide()
             },
             onScreenOn = {
                 val lockedApps = preferences.getStringSet(
@@ -49,10 +51,13 @@ android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
 
                 val packageName = currentPackage
 
-                if (packageName != null && packageName in lockedApps) {
-                    overlayManager.show {
-                        unlockedPackage = packageName
-                    }
+                if (
+                    packageName != null &&
+                    packageName in lockedApps &&
+                    unlockedPackage != packageName &&
+                    pendingAuthPackage == null
+                ) {
+                    launchUnlockActivity(packageName)
                 }
             }
         )
@@ -67,28 +72,55 @@ android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        // Biometric success receiver
-        biometricReceiver = object : BroadcastReceiver() {
+        authReceiver = object : BroadcastReceiver() {
             override fun onReceive(
                 context: Context?,
                 intent: Intent?
             ) {
-                if (intent?.action ==
-                    "com.example.applocker.BIOMETRIC_SUCCESS"
-                ) {
-                    overlayManager.biometricSucceeded()
+                val target = intent?.getStringExtra(
+                    UnlockActivity.EXTRA_TARGET_PACKAGE
+                )
+
+                when (intent?.action) {
+                    UnlockActivity.ACTION_UNLOCK_SUCCESS -> {
+                        if (target != null && target == pendingAuthPackage) {
+                            unlockedPackage = target
+                            pendingAuthPackage = null
+                            relockController.cancel()
+
+                            android.util.Log.d(
+                                "AppLockerDebug",
+                                "AUTHENTICATION SUCCESS: $target"
+                            )
+                        }
+                    }
+
+                    UnlockActivity.ACTION_UNLOCK_CANCELLED -> {
+                        if (target == pendingAuthPackage) {
+                            pendingAuthPackage = null
+
+                            android.util.Log.d(
+                                "AppLockerDebug",
+                                "AUTHENTICATION CANCELLED: $target"
+                            )
+                        }
+                    }
                 }
             }
         }
 
+        val authFilter = IntentFilter().apply {
+            addAction(UnlockActivity.ACTION_UNLOCK_SUCCESS)
+            addAction(UnlockActivity.ACTION_UNLOCK_CANCELLED)
+        }
+
         ContextCompat.registerReceiver(
             this,
-            biometricReceiver,
-            IntentFilter("com.example.applocker.BIOMETRIC_SUCCESS"),
+            authReceiver,
+            authFilter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        // Quick Lock receiver
         quickLockReceiver = object : BroadcastReceiver() {
             override fun onReceive(
                 context: Context?,
@@ -96,7 +128,6 @@ android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
             ) {
                 unlockedPackage = null
                 relockController.cancel()
-                overlayManager.hide()
             }
         }
 
@@ -108,19 +139,56 @@ android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
         )
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+    private fun launchUnlockActivity(packageName: String) {
+        if (pendingAuthPackage == packageName) return
 
+        pendingAuthPackage = packageName
+
+        try {
+            val intent = Intent(
+                this,
+                UnlockActivity::class.java
+            ).apply {
+                putExtra(
+                    UnlockActivity.EXTRA_TARGET_PACKAGE,
+                    packageName
+                )
+
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                )
+            }
+
+            startActivity(intent)
+
+            android.util.Log.d(
+                "AppLockerDebug",
+                "LAUNCHING AUTHENTICATION FOR: $packageName"
+            )
+
+        } catch (e: Exception) {
+            pendingAuthPackage = null
+
+            android.util.Log.e(
+                "AppLockerDebug",
+                "Unable to launch authentication Activity",
+                e
+            )
+        }
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-android.util.Log.d(
-    "AppLockerDebug",
-    "Event=${event.eventType}, package=${event.packageName}"
-)
-        if (event.eventType !=
+
+        if (
+            event.eventType !=
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         ) return
 
         val packageName = event.packageName?.toString() ?: return
 
+        // Ignore App Locker's own Activities.
         if (packageName == this.packageName) return
 
         val previousPackage = currentPackage
@@ -132,57 +200,49 @@ android.util.Log.d(
         ) ?: emptySet()
 
         android.util.Log.d(
-    "AppLockerDebug",
-    "PACKAGE=$packageName LOCKED=${packageName in lockedApps} UNLOCKED=$unlockedPackage"
-)
+            "AppLockerDebug",
+            "PACKAGE=$packageName LOCKED=${packageName in lockedApps} UNLOCKED=$unlockedPackage PENDING=$pendingAuthPackage"
+        )
 
-        // Moved to an unprotected app
+        // User moved to an unprotected app.
         if (packageName !in lockedApps) {
 
             if (previousPackage in lockedApps) {
 
                 if (unlockedPackage == previousPackage) {
-
                     val timeout = preferences.getInt(
                         "auto_lock_timeout_seconds",
                         0
                     )
 
                     relockController.start(timeout)
-
                 } else {
                     relockController.cancel()
-                    overlayManager.hide()
                 }
             }
 
             return
         }
 
-        // Already authenticated
+        // This protected app has already been authenticated.
         if (unlockedPackage == packageName) {
             relockController.cancel()
             return
         }
 
-        // Protected app requires authentication
+        // Authentication Activity is already being displayed.
+        if (pendingAuthPackage == packageName) {
+            return
+        }
+
         relockController.cancel()
         unlockedPackage = null
-        overlayManager.hide()
 
-      android.util.Log.d("AppLockerDebug", "SHOWING LOCK OVERLAY FOR $packageName")
-
-overlayManager.show {
-    android.util.Log.d("AppLockerDebug", "UNLOCK CALLBACK FOR $packageName")
-}
-    unlockedPackage = packageName
-
+        launchUnlockActivity(packageName)
     }
 
     override fun onInterrupt() {
-        if (::overlayManager.isInitialized) {
-            overlayManager.hide()
-        }
+        // No overlay needs to be removed.
     }
 
     override fun onDestroy() {
@@ -190,23 +250,22 @@ overlayManager.show {
         screenReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
 
-        biometricReceiver?.let {
+        authReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
 
         quickLockReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (_: Exception) {}
-        }
-
-        if (::overlayManager.isInitialized) {
-            overlayManager.hide()
+            } catch (_: Exception) {
+            }
         }
 
         if (::relockController.isInitialized) {
