@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.inputmethod.InputMethodManager
 import com.example.applocker.auth.AuthenticationManager
 import com.example.applocker.auth.BiometricUnlockActivity
 import com.example.applocker.auth.PatternLockView
@@ -278,10 +279,37 @@ AuthenticationManager.AuthType.BIOMETRIC -> {
             gravity = Gravity.CENTER
         }
 
-        try {
-            windowManager.addView(root, params)
-            overlayView = root
-            updateCooldown()
+try{
+      windowManager.addView(root, params)
+overlayView = root
+updateCooldown()
+
+if (authType == AuthenticationManager.AuthType.BIOMETRIC) {
+    handler.postDelayed({
+        unlock.performClick()
+    }, 300)
+} else if (authManager.getCooldownRemainingSeconds() == 0L) {
+    handler.postDelayed({
+        input.requestFocus()
+
+        val imm = service.getSystemService(
+            Context.INPUT_METHOD_SERVICE
+        ) as InputMethodManager
+
+        imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+    }, 200)
+}
+if (authManager.getCooldownRemainingSeconds() == 0L) {
+    handler.postDelayed({
+        input.requestFocus()
+
+        val imm = service.getSystemService(
+            Context.INPUT_METHOD_SERVICE
+        ) as InputMethodManager
+
+        imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+    }, 200)
+}
 
         } catch (_: Exception) {
             overlayView = null
