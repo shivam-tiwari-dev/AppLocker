@@ -29,12 +29,13 @@ class AppLockAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
 
-        android.util.Log.d(
-            "AppLockerDebug",
-            "ACCESSIBILITY SERVICE CONNECTED"
-        )
+        android.util.Log.d("AppLockerDebug", "ACCESSIBILITY SERVICE CONNECTED")
 
         relockController = RelockController {
+            android.util.Log.d(
+                "AppLockerDebug",
+                "RELOCK TIMER EXPIRED"
+            )
             unlockedPackage = null
         }
 
@@ -109,15 +110,13 @@ class AppLockAccessibilityService : AccessibilityService() {
             }
         }
 
-        val authFilter = IntentFilter().apply {
-            addAction(UnlockActivity.ACTION_UNLOCK_SUCCESS)
-            addAction(UnlockActivity.ACTION_UNLOCK_CANCELLED)
-        }
-
         ContextCompat.registerReceiver(
             this,
             authReceiver,
-            authFilter,
+            IntentFilter().apply {
+                addAction(UnlockActivity.ACTION_UNLOCK_SUCCESS)
+                addAction(UnlockActivity.ACTION_UNLOCK_CANCELLED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
@@ -191,6 +190,16 @@ class AppLockAccessibilityService : AccessibilityService() {
         // Ignore App Locker's own Activities.
         if (packageName == this.packageName) return
 
+        // Ignore temporary Android System UI events.
+        // Do NOT change currentPackage for these events.
+        if (packageName == "com.android.systemui") {
+            android.util.Log.d(
+                "AppLockerDebug",
+                "IGNORING TEMPORARY SYSTEM UI EVENT"
+            )
+            return
+        }
+
         val previousPackage = currentPackage
         currentPackage = packageName
 
@@ -204,7 +213,7 @@ class AppLockAccessibilityService : AccessibilityService() {
             "PACKAGE=$packageName LOCKED=${packageName in lockedApps} UNLOCKED=$unlockedPackage PENDING=$pendingAuthPackage"
         )
 
-        // User moved to an unprotected app.
+        // User genuinely moved to an unprotected app.
         if (packageName !in lockedApps) {
 
             if (previousPackage in lockedApps) {
@@ -212,7 +221,12 @@ class AppLockAccessibilityService : AccessibilityService() {
                 if (unlockedPackage == previousPackage) {
                     val timeout = preferences.getInt(
                         "auto_lock_timeout_seconds",
-                        0
+                        30
+                    )
+
+                    android.util.Log.d(
+                        "AppLockerDebug",
+                        "STARTING RELOCK TIMER: $timeout seconds"
                     )
 
                     relockController.start(timeout)
@@ -224,13 +238,13 @@ class AppLockAccessibilityService : AccessibilityService() {
             return
         }
 
-        // This protected app has already been authenticated.
+        // Protected app is already authenticated.
         if (unlockedPackage == packageName) {
             relockController.cancel()
             return
         }
 
-        // Authentication Activity is already being displayed.
+        // Authentication Activity is already displayed.
         if (pendingAuthPackage == packageName) {
             return
         }
@@ -242,7 +256,6 @@ class AppLockAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        // No overlay needs to be removed.
     }
 
     override fun onDestroy() {
