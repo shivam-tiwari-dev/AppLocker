@@ -98,15 +98,15 @@ AppLocker is designed for local operation and does not require a cloud account.
 
 ### Home Screen
 
- ![AppLocker Home Screen](screenshots/home.jpg)
+ ![AppLocker Home Screen](screenshots/home.jpeg)
 
 ### Authentication Screen
 
- ![Authentication Screen](screenshots/authentication.jpg)
+ ![Authentication Screen](screenshots/authentication.jpeg)
 
 ### Privacy and Security
 
- ![Privacy and Security Screen](screenshots/privacy-security.jpg)
+ ![Privacy and Security Screen](screenshots/privacy-security.jpeg)
 
 ## ⚠️ Limitations
 
